@@ -2,10 +2,10 @@
 pragma solidity ^0.8.2;
 
 import "./House Staking.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
-import "@openzeppelin/contracts/interfaces/IERC721Enumerable.sol";
-import "@openzeppelin/contracts/interfaces/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "./SafeMath.sol";
+import "./IERC721Enumerable.sol";
+import "./IERC20.sol";
+import "./Ownable.sol";
 
 interface IBiscuits is IERC20 {
     function claimable(address user) external view returns (uint256);
@@ -142,16 +142,21 @@ contract housesStakingProxy is Ownable {
         }
     }
 
-    function _getUnclaimedPoint(
+    function getUnclaimedPoint(
         address _address
-    ) internal view returns (uint256 seasonPoints) {
-        if (ihs.timestamps(_address) > 0) {
-            seasonPoints += ihs
-                .viewPointsPerDay(_address)
-                .mul(block.timestamp.sub(ihs.timestamps(_address)))
-                .div(86400);
-        } else {
-            return 0;
+    ) public view returns (uint256 seasonPoints) {
+        seasonPoints += ihs
+            .viewPointsPerDay(_address)
+            .mul(block.timestamp.sub(ihs.timestamps(_address)))
+            .div(86400);
+    }
+
+    function getUnclaimedStakersPoints(
+        uint256 a,
+        uint256 b
+    ) public view returns (uint256 totalPoints) {
+        for (uint256 i = a; i < b; i++) {
+            totalPoints += getUnclaimedPoint(ihs.stakersMapping(i));
         }
     }
 
@@ -193,9 +198,8 @@ contract housesStakingProxy is Ownable {
         seasonInfo[1] = block.timestamp - ihs.seasonStartTime(season);
         seasonInfo[2] =
             ihs.pointsBalance(season, _address) +
-            _getUnclaimedPoint(_address);
+            getUnclaimedPoint(_address);
         seasonInfo[3] = ihs.totalPoints(season);
-
         bscBalance = bsc.balanceOf(_address);
         claimableBSC = bsc.claimable(_address);
     }
@@ -236,5 +240,9 @@ contract housesStakingProxy is Ownable {
         notStaked = getWalletOfOwner(_address, houses);
         countBooster = _getBoosterCountHouses(staked);
         countSpecial = _getAreSpecialHouses(staked);
+    }
+
+    function viewStakersCount() external view returns (uint256) {
+        return ihs.stakersCount();
     }
 }
