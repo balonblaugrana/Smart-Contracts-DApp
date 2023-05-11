@@ -141,58 +141,7 @@ contract AristoswapTest is DSTest {
         swap.withelistCollections(collections);
     }
 
-    function testWhitelistTokens_ShouldSucceed_WhenCalledByOwner() public {
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(token1);
-        tokens[1] = address(token2);
-
-        vm.prank(owner);
-        swap.withelistTokens(tokens);
-        bool status = swap.feeTokenAllowed(address(token1));
-        assert(status);
-        status = swap.feeTokenAllowed(address(token2));
-        assert(status);
-        status = swap.feeTokenAllowed(address(token3));
-        assert(!status);
-
-        address token1Address = swap.allTokens(0);
-        assertEq(token1Address, address(token1));
-        address token2Address = swap.allTokens(1);
-        assertEq(token2Address, address(token2));
-    }
-
-    function testWhitelistTokens_ShouldRevert_WhenNotCalledByOwner() public {
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(token1);
-        tokens[1] = address(token2);
-
-        vm.prank(users[2]);
-        vm.expectRevert("Ownable: caller is not the owner");
-        swap.withelistTokens(tokens);
-    }
-
-    function testWhitelistTokens_ShouldRevert_WhenTokenAlreadyWhitelisted() public {
-        testWhitelistTokens_ShouldSucceed_WhenCalledByOwner();
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(token1);
-        tokens[1] = address(token3);
-
-        vm.prank(owner);
-        vm.expectRevert("Token already whitelisted");
-        swap.withelistTokens(tokens);
-    }
-
-    function testWhitelistTokens_ShouldRevert_WhenTokenIsNull() public {
-        address[] memory tokens = new address[](2);
-        tokens[0] = address(0);
-        tokens[1] = address(token3);
-
-        vm.prank(owner);
-        vm.expectRevert("Invalid token address");
-        swap.withelistTokens(tokens);
-    }
-
-    function _setSwap(address user, uint256 croAmount, uint256[] memory tokenIds, address[] memory collections, uint256 listingTime) internal returns (Swap memory swapUser) {
+    function _setSwap(address user, uint256 croAmount, uint256[] memory tokenIds, address[] memory collections, uint256 listingTime) internal view returns (Swap memory swapUser) {
         uint256 collectionsLength = collections.length;
         AssetType[] memory assetTypes = new AssetType[](collectionsLength);
         for (uint256 i = 0; i < collectionsLength; i++) {
@@ -268,6 +217,32 @@ contract AristoswapTest is DSTest {
         uint256 fees = 20 ether; // project holder
         vm.prank(users[2]);
         vm.expectRevert(abi.encodeWithSelector(Aristoswap.InvalidSwap.selector, 0));
+        swap.createSwap{value: fees}(swap1, swap2, address(0));
+    }
+
+    function testCreateSwap_ShouldRevert_WhenCallerIsNotSwapMakerTrader() public {
+        _mintNft(users[2], aristodogs, 1);
+        _mintNft(users[2], nft1, 1);
+
+        _mintNft(users[3], dogHouses, 2);
+
+        address[] memory collections1 = new address[](2);
+        uint256[] memory tokenIds1 = new uint256[](2);
+        collections1[0] = address(aristodogs);
+        collections1[1] = address(nft1);
+        tokenIds1[0] = 1;
+        tokenIds1[1] = 1;
+        Swap memory swap1 = _setSwap(users[2], 0, tokenIds1, collections1, block.timestamp - 10 minutes);
+
+        address[] memory collections2 = new address[](2);
+        uint256[] memory tokenIds2 = new uint256[](2);
+        collections2[0] = address(dogHouses);
+        collections2[1] = address(dogHouses);
+        tokenIds2[1] = 2;
+        Swap memory swap2 = _setSwap(users[3], 0, tokenIds2, collections2, block.timestamp - 10 minutes);
+        uint256 fees = 20 ether; // project holder
+        vm.prank(users[3]);
+        vm.expectRevert(Aristoswap.WrongCaller.selector);
         swap.createSwap{value: fees}(swap1, swap2, address(0));
     }
 }

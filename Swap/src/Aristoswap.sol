@@ -27,10 +27,8 @@ contract Aristoswap is Ownable {
     mapping(bytes32 => bool) public cancelledOrFilled;
     
     mapping(address => bool) public collectionAllowed;
-    mapping(address => bool) public feeTokenAllowed;
 
     address[] public allCollections;
-    address[] public allTokens;
 
     event SwapCreated(uint256 indexed swapId, address indexed maker, address indexed buyer);
     event SwapMatched(uint256 indexed swapId, address indexed maker, address indexed buyer);
@@ -40,6 +38,7 @@ contract Aristoswap is Ownable {
     error InvalidSwap(uint256 side); // 0 = maker, 1 = taker
     error FeesNotPaid();
     error UserHasPendingSwap();
+    error WrongToken();
 
     constructor(address[2] memory _projectCollections, address _daoWallet, address _biscouitToken) {
         projectCollections = _projectCollections;
@@ -56,16 +55,6 @@ contract Aristoswap is Ownable {
             require(collectionAllowed[collection] == false, "Collection already whitelisted");
             collectionAllowed[collection] = true;
             allCollections.push(collection);
-        }
-    }
-
-    function withelistTokens(address[] calldata tokens) external onlyOwner {
-        for (uint256 i = 0; i < tokens.length; i++) {
-            address token = tokens[i];
-            require(token != address(0), "Invalid token address");
-            require(feeTokenAllowed[token] == false, "Token already whitelisted");
-            feeTokenAllowed[token] = true;
-            allTokens.push(token);
         }
     }
 
@@ -126,12 +115,11 @@ contract Aristoswap is Ownable {
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {
             return msg.value >= (userFeesAmount + makerCroAmount);
-        } else {
-            if (feeTokenAllowed[feeToken] == false) {
-                return false;
-            }
+        } else if (feeToken == biscouitToken) {
             require(IERC20(feeToken).transferFrom(msg.sender, address(this), userFeesAmount), "Fees not paid");
             return msg.value > makerCroAmount;
+        } else {
+            revert WrongToken();
         }
     }
 
@@ -201,7 +189,7 @@ contract Aristoswap is Ownable {
             amount = 20 ether;
         }
         if (_feeToken == biscouitToken) {
-            amount = amount - (amount * 10 / 100);
+            amount = (amount / 2) * 100;
         }
     }
 
