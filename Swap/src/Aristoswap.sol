@@ -8,6 +8,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 import {Swap, AssetType} from "../lib/SwapStruct.sol";
 
+import "forge-std/console.sol";
+
 contract Aristoswap is Ownable {
     uint256 public swapId;
 
@@ -39,8 +41,10 @@ contract Aristoswap is Ownable {
     error FeesNotPaid();
     error UserHasPendingSwap();
 
-    constructor(address[] memory _projectCollections, address _daoWallet, address _biscouitToken) {
+    constructor(address[2] memory _projectCollections, address _daoWallet, address _biscouitToken) {
         projectCollections = _projectCollections;
+        collectionAllowed[_projectCollections[0]] = true;
+        collectionAllowed[_projectCollections[1]] = true;
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;
     }
@@ -70,7 +74,6 @@ contract Aristoswap is Ownable {
         
         if (_validateFees(feeToken, swapMaker.croAmount) == false) revert FeesNotPaid();
         if (pendingSwap[msg.sender] == true) revert UserHasPendingSwap();
-        
         if (_validateSwapParameters(swapMaker) == false) revert InvalidSwap(0);
         if (_validateSwapParameters(swapTaker) == false) revert InvalidSwap(1);
 
@@ -80,6 +83,8 @@ contract Aristoswap is Ownable {
         swapsByUser[msg.sender].push(currentSwapId);
         swapsByUser[swapTaker.trader].push(currentSwapId);
         swapId = currentSwapId;
+        pendingSwap[msg.sender] = true;
+        pendingSwap[swapTaker.trader] = true;
 
         emit SwapCreated(currentSwapId, msg.sender, swapTaker.trader);
     }
@@ -117,13 +122,14 @@ contract Aristoswap is Ownable {
     }
 
     function _validateFees(address feeToken, uint256 makerCroAmount) internal returns (bool) {
-        if (feeTokenAllowed[feeToken] == false) {
-            return false;
-        }
+        
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {
             return msg.value >= (userFeesAmount + makerCroAmount);
         } else {
+            if (feeTokenAllowed[feeToken] == false) {
+                return false;
+            }
             require(IERC20(feeToken).transferFrom(msg.sender, address(this), userFeesAmount), "Fees not paid");
             return msg.value > makerCroAmount;
         }
@@ -132,7 +138,6 @@ contract Aristoswap is Ownable {
     function _validateSwapParameters(Swap calldata swap) internal view returns (bool) {
         bytes32 swapHash = _hashSwap(swap);
         return (
-            swap.trader == msg.sender &&
             swap.listingTime < block.timestamp &&
             cancelledOrFilled[swapHash] == false &&
             swap.tokensIds.length < 9 &&
