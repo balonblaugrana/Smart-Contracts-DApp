@@ -52,7 +52,7 @@ contract Aristoswap is Ownable {
         for (uint256 i = 0; i < collections.length; i++) {
             address collection = collections[i];
             require(collection != address(0), "Invalid collection address");
-            require(collectionAllowed[collection] == false, "Collection already whitelisted");
+            require(!collectionAllowed[collection], "Collection already whitelisted");
             collectionAllowed[collection] = true;
             allCollections.push(collection);
         }
@@ -65,6 +65,7 @@ contract Aristoswap is Ownable {
         if (pendingSwap[msg.sender] == true) revert UserHasPendingSwap();
         if (_validateSwapParameters(swapMaker) == false) revert InvalidSwap(0);
         if (_validateSwapParameters(swapTaker) == false) revert InvalidSwap(1);
+
 
         uint256 currentSwapId = swapId + 1;
         makerSwapsById[currentSwapId] = swapMaker;
@@ -85,7 +86,7 @@ contract Aristoswap is Ownable {
         if (takerSwap.croAmount < msg.value) revert NotEnoughFunds();
 
         bytes32 makerHash = _hashSwap(makerSwap);
-        if (cancelledOrFilled[makerHash] == true) revert InvalidSwap(0);
+        if (cancelledOrFilled[makerHash]) revert InvalidSwap(0);
         cancelledOrFilled[makerHash] = true;
 
         _executeTokensTransfer(
@@ -111,7 +112,6 @@ contract Aristoswap is Ownable {
     }
 
     function _validateFees(address feeToken, uint256 makerCroAmount) internal returns (bool) {
-        
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {
             return msg.value >= (userFeesAmount + makerCroAmount);
@@ -127,7 +127,7 @@ contract Aristoswap is Ownable {
         bytes32 swapHash = _hashSwap(swap);
         return (
             swap.listingTime < block.timestamp &&
-            cancelledOrFilled[swapHash] == false &&
+            !cancelledOrFilled[swapHash] &&
             swap.tokensIds.length < 9 &&
             swap.tokensIds.length == swap.tokensAddresses.length &&
             swap.tokensIds.length == swap.assetTypes.length &&
@@ -137,7 +137,7 @@ contract Aristoswap is Ownable {
 
     function _validateCollections(address[] calldata collections) internal view returns (bool) {
         for (uint256 i = 0; i < collections.length; i++) {
-            if (collectionAllowed[collections[i]] == false) {
+            if (collectionAllowed[!collections[i]]) {
                 return false;
             }
         }
