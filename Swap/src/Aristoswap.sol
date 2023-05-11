@@ -49,7 +49,7 @@ contract Aristoswap is Ownable {
         for (uint256 i = 0; i < collections.length; i++) {
             address collection = collections[i];
             require(collection != address(0), "Invalid collection address");
-            require(collectionAllowed[collection] == false, "Collection already whitelisted");
+            require(!collectionAllowed[collection], "Collection already whitelisted");
             collectionAllowed[collection] = true;
             allCollections.push(collection);
         }
@@ -59,7 +59,7 @@ contract Aristoswap is Ownable {
         for (uint256 i = 0; i < tokens.length; i++) {
             address token = tokens[i];
             require(token != address(0), "Invalid token address");
-            require(feeTokenAllowed[token] == false, "Token already whitelisted");
+            require(!feeTokenAllowed[token], "Token already whitelisted");
             feeTokenAllowed[token] = true;
             allTokens.push(token);
         }
