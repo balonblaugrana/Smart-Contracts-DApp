@@ -67,6 +67,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -76,6 +77,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
         if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
         if (_validateSwapParameters(taker.takerSwap, takerHash) == false) revert InvalidSwap(1);
+
 
         if (_validateSignatures(maker, makerHash) == false) revert InvalidAuthorization(0);
         if (_validateSignatures(taker, takerHash) == false) revert InvalidAuthorization(1);
@@ -87,6 +89,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
         if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
         if (_validateMatchingSwaps(maker.takerSwap, taker.takerSwap) == false) revert SwapsDontMatch();
+
 
         _executeTokensTransfer(
             maker.makerSwap.trader, 
@@ -152,6 +155,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
         if (_validateUserAuthorization(swapHash, input.swap.trader, input.v, input.r, input.s) == false) {
             return false;
+
         }
 
         return true;
