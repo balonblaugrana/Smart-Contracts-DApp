@@ -73,40 +73,40 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     //////////////////////////////////////////////////////////////*/
     function makeSwap(Input calldata maker, Input calldata taker, address feeToken) external payable {
         bytes32 makerHash = _hashSwap(maker.makerSwap, userNonce[maker.makerSwap.trader]);
-        bytes32 takerHash = _hashSwap(taker.takerSwap, userNonce[taker.takerSwap.trader]);
+        bytes32 takerHash = _hashSwap(taker.makerSwap, userNonce[taker.makerSwap.trader]);
 
         if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
-        if (_validateSwapParameters(taker.takerSwap, takerHash) == false) revert InvalidSwap(1);
+        if (_validateSwapParameters(taker.makerSwap, takerHash) == false) revert InvalidSwap(1);
 
 
         if (_validateSignatures(maker, makerHash) == false) revert InvalidAuthorization(0);
         if (_validateSignatures(taker, takerHash) == false) revert InvalidAuthorization(1);
 
-        if (_validateFees(feeToken, taker.takerSwap.amount) == false ) revert FeesNotPaid();
+        if (_validateFees(feeToken, taker.makerSwap.amount) == false ) revert FeesNotPaid();
 
-        _executeFundsTransfer(taker.takerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
-        _executeFundsTransfer(maker.makerSwap.trader, taker.takerSwap.trader, taker.takerSwap.amount, 1);
+        _executeFundsTransfer(taker.makerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
+        _executeFundsTransfer(maker.makerSwap.trader, taker.makerSwap.trader, taker.makerSwap.amount, 1);
 
         if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
-        if (_validateMatchingSwaps(maker.takerSwap, taker.takerSwap) == false) revert SwapsDontMatch();
+        if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
 
 
         _executeTokensTransfer(
             maker.makerSwap.trader, 
-            taker.takerSwap.trader, 
+            taker.makerSwap.trader, 
             maker.makerSwap.collections, 
             maker.makerSwap.tokenIds, 
             maker.makerSwap.assetTypes
         );
         _executeTokensTransfer(
-            taker.takerSwap.trader, 
+            taker.makerSwap.trader, 
             maker.makerSwap.trader, 
-            taker.takerSwap.collections, 
-            taker.takerSwap.tokenIds, 
-            taker.takerSwap.assetTypes
+            taker.makerSwap.collections, 
+            taker.makerSwap.tokenIds, 
+            taker.makerSwap.assetTypes
         );
 
-        emit SwapsMatched(maker.makerSwap, taker.takerSwap);
+        emit SwapsMatched(maker.makerSwap, taker.makerSwap);
     }
     
     /// @notice Increment user's nonce to cancel pending swaps
@@ -149,11 +149,11 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     }
 
     function _validateSignatures(Input calldata input, bytes32 swapHash) internal view returns (bool) {
-        if (input.swap.trader == msg.sender) {
+        if (input.makerSwap.trader == msg.sender) {
             return true;
         }
 
-        if (_validateUserAuthorization(swapHash, input.swap.trader, input.v, input.r, input.s) == false) {
+        if (_validateUserAuthorization(swapHash, input.makerSwap.trader, input.v, input.r, input.s) == false) {
             return false;
 
         }
