@@ -38,6 +38,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     //////////////////////////////////////////////////////////////*/
     error InvalidSwap(uint256 side); // 0 = maker, 1 = taker
     error InvalidAuthorization(uint256 side); // 0 = maker, 1 = taker
+    error SwapsDontMatch();
     error FeesNotPaid();
     error WrongToken();
 
@@ -70,36 +71,39 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
     function makeSwap(Input calldata maker, Input calldata taker, address feeToken) external payable {
-        bytes32 makerHash = _hashSwap(maker.swap, userNonce[maker.swap.trader]);
-        bytes32 takerHash = _hashSwap(taker.swap, userNonce[taker.swap.trader]);
+        bytes32 makerHash = _hashSwap(maker.makerSwap, userNonce[maker.makerSwap.trader]);
+        bytes32 takerHash = _hashSwap(taker.takerSwap, userNonce[taker.takerSwap.trader]);
 
-        if (_validateSwapParameters(maker.swap, makerHash) == false) revert InvalidSwap(0);
-        if (_validateSwapParameters(taker.swap, takerHash) == false) revert InvalidSwap(1);
+        if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
+        if (_validateSwapParameters(taker.takerSwap, takerHash) == false) revert InvalidSwap(1);
 
         if (_validateSignatures(maker, makerHash) == false) revert InvalidAuthorization(0);
         if (_validateSignatures(taker, takerHash) == false) revert InvalidAuthorization(1);
 
-        if (_validateFees(feeToken, taker.swap.amount) == false ) revert FeesNotPaid();
+        if (_validateFees(feeToken, taker.takerSwap.amount) == false ) revert FeesNotPaid();
 
-        _executeFundsTransfer(taker.swap.trader, maker.swap.trader, maker.swap.amount, 0);
-        _executeFundsTransfer(maker.swap.trader, taker.swap.trader, taker.swap.amount, 1);
+        _executeFundsTransfer(taker.takerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
+        _executeFundsTransfer(maker.makerSwap.trader, taker.takerSwap.trader, taker.takerSwap.amount, 1);
+
+        if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
+        if (_validateMatchingSwaps(maker.takerSwap, taker.takerSwap) == false) revert SwapsDontMatch();
 
         _executeTokensTransfer(
-            maker.swap.trader, 
-            taker.swap.trader, 
-            maker.swap.collections, 
-            maker.swap.tokenIds, 
-            maker.swap.assetTypes
+            maker.makerSwap.trader, 
+            taker.takerSwap.trader, 
+            maker.makerSwap.collections, 
+            maker.makerSwap.tokenIds, 
+            maker.makerSwap.assetTypes
         );
         _executeTokensTransfer(
-            taker.swap.trader, 
-            maker.swap.trader, 
-            taker.swap.collections, 
-            taker.swap.tokenIds, 
-            taker.swap.assetTypes
+            taker.takerSwap.trader, 
+            maker.makerSwap.trader, 
+            taker.takerSwap.collections, 
+            taker.takerSwap.tokenIds, 
+            taker.takerSwap.assetTypes
         );
 
-        emit SwapsMatched(maker.swap, taker.swap);
+        emit SwapsMatched(maker.makerSwap, taker.takerSwap);
     }
     
     /// @notice Increment user's nonce to cancel pending swaps
@@ -111,6 +115,15 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    function _validateMatchingSwaps(Swap calldata maker, Swap calldata taker) internal pure returns (bool) {
+        return (
+            maker.amount == taker.amount && 
+            maker.collections.length == taker.collections.length && 
+            maker.tokenIds.length == taker.tokenIds.length && 
+            maker.assetTypes.length == taker.assetTypes.length
+        );
+    }
+
     function _validateFees(address feeToken, uint256 amount) internal returns (bool) {
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {

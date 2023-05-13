@@ -15,7 +15,8 @@ struct Swap {
 }
 
 struct Input {
-    Swap swap;
+    Swap makerSwap;
+    Swap takerSwap;
     uint8 v;
     bytes32 r;
     bytes32 s;
