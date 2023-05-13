@@ -4,144 +4,178 @@ pragma solidity ^0.8.18;
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-import {Swap, AssetType} from "../lib/SwapStruct.sol";
+import {Swap, AssetType, Input} from "lib/SwapStructs.sol";
+import {EIP712} from "lib/EIP712.sol";
 
 import "forge-std/console.sol";
 
-contract Aristoswap is Ownable {
-    uint256 public swapId;
-
-    address[] public projectCollections;
-    address public immutable biscouitToken;
-    address public immutable daoWallet;
-
+contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
+    /*//////////////////////////////////////////////////////////////
+                                STORAGE
+    //////////////////////////////////////////////////////////////*/
+    address public biscouitToken;
+    address public daoWallet;
     address[] public partnersCollections;
-
-    mapping(uint256 => Swap) public makerSwapsById;
-    mapping(uint256 => Swap) public takerSwapsById;
-
-    mapping(address => uint256[]) public swapsByUser;
-    mapping(address => bool) public pendingSwap;
-    mapping(bytes32 => bool) public cancelledOrFilled;
+    address[] private projectCollections;
     
-    mapping(address => bool) public collectionAllowed;
+    mapping(address => uint256) public userNonce;
+    mapping(bytes32 => bool) public cancelledOrFilled;
 
-    address[] public allCollections;
+    address public immutable wcro = 0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23;
 
-    event SwapCreated(uint256 indexed swapId, address indexed maker, address indexed buyer);
-    event SwapMatched(uint256 indexed swapId, address indexed maker, address indexed buyer);
+    /*//////////////////////////////////////////////////////////////
+                                 EVENTS
+    //////////////////////////////////////////////////////////////*/
+    event SwapsMatched(Swap makerSwap, Swap takerSwap);
+    event NonceIncremented(address indexed user, uint256 newNonce);
 
-    error NotEnoughFunds();
-    error WrongCaller();
+    /*//////////////////////////////////////////////////////////////
+                                 ERRORS
+    //////////////////////////////////////////////////////////////*/
     error InvalidSwap(uint256 side); // 0 = maker, 1 = taker
+    error InvalidAuthorization(uint256 side); // 0 = maker, 1 = taker
+    error SwapsDontMatch();
     error FeesNotPaid();
-    error UserHasPendingSwap();
     error WrongToken();
 
-    constructor(address[2] memory _projectCollections, address _daoWallet, address _biscouitToken) {
+    /*//////////////////////////////////////////////////////////////
+                          PROXY INITIALIZATION
+    //////////////////////////////////////////////////////////////*/
+    function initialize(
+        address[2] memory _projectCollections, 
+        address _daoWallet, 
+        address _biscouitToken
+    ) public initializer {
+        __Ownable_init();
+
+        DOMAIN_SEPARATOR = _hashDomain(
+            EIP712Domain({
+                name: "Aristoswap",
+                version: "1.0",
+                chainId: block.chainid,
+                verifyingContract: address(this)
+            })
+        );
         projectCollections = _projectCollections;
-        collectionAllowed[_projectCollections[0]] = true;
-        collectionAllowed[_projectCollections[1]] = true;
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;
     }
 
-    function withelistCollections(address[] calldata collections) external onlyOwner {
-        for (uint256 i = 0; i < collections.length; i++) {
-            address collection = collections[i];
-            require(collection != address(0), "Invalid collection address");
-            require(!collectionAllowed[collection], "Collection already whitelisted");
-            collectionAllowed[collection] = true;
-            allCollections.push(collection);
-        }
-    }
-
-    function createSwap(Swap calldata swapMaker, Swap calldata swapTaker, address feeToken) external payable {
-        if (msg.sender != swapMaker.trader) revert WrongCaller();
-        
-        if (_validateFees(feeToken, swapMaker.croAmount) == false) revert FeesNotPaid();
-        if (pendingSwap[msg.sender] == true) revert UserHasPendingSwap();
-        if (_validateSwapParameters(swapMaker) == false) revert InvalidSwap(0);
-        if (_validateSwapParameters(swapTaker) == false) revert InvalidSwap(1);
+    function _authorizeUpgrade(address) internal override onlyOwner {}
 
 
-        uint256 currentSwapId = swapId + 1;
-        makerSwapsById[currentSwapId] = swapMaker;
-        takerSwapsById[currentSwapId] = swapTaker;
-        swapsByUser[msg.sender].push(currentSwapId);
-        swapsByUser[swapTaker.trader].push(currentSwapId);
-        swapId = currentSwapId;
-        pendingSwap[msg.sender] = true;
-        pendingSwap[swapTaker.trader] = true;
+    /*//////////////////////////////////////////////////////////////
+                           EXTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function makeSwap(Input calldata maker, Input calldata taker, address feeToken) external payable {
+        bytes32 makerHash = _hashSwap(maker.makerSwap, userNonce[maker.makerSwap.trader]);
+        bytes32 takerHash = _hashSwap(taker.takerSwap, userNonce[taker.takerSwap.trader]);
 
-        emit SwapCreated(currentSwapId, msg.sender, swapTaker.trader);
-    }
+        if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
+        if (_validateSwapParameters(taker.takerSwap, takerHash) == false) revert InvalidSwap(1);
 
-    function acceptSwap(uint256 _swapId) external payable {
-        Swap memory makerSwap = makerSwapsById[_swapId];
-        Swap memory takerSwap = takerSwapsById[_swapId];
-        if (msg.sender != takerSwap.trader) revert WrongCaller();
-        if (takerSwap.croAmount < msg.value) revert NotEnoughFunds();
 
-        bytes32 makerHash = _hashSwap(makerSwap);
-        if (cancelledOrFilled[makerHash]) revert InvalidSwap(0);
-        cancelledOrFilled[makerHash] = true;
+        if (_validateSignatures(maker, makerHash) == false) revert InvalidAuthorization(0);
+        if (_validateSignatures(taker, takerHash) == false) revert InvalidAuthorization(1);
+
+        if (_validateFees(feeToken, taker.takerSwap.amount) == false ) revert FeesNotPaid();
+
+        _executeFundsTransfer(taker.takerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
+        _executeFundsTransfer(maker.makerSwap.trader, taker.takerSwap.trader, taker.takerSwap.amount, 1);
+
+        if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
+        if (_validateMatchingSwaps(maker.takerSwap, taker.takerSwap) == false) revert SwapsDontMatch();
+
 
         _executeTokensTransfer(
-            makerSwap.trader, 
-            takerSwap.trader, 
-            makerSwap.tokensAddresses, 
-            makerSwap.tokensIds, 
-            makerSwap.assetTypes
+            maker.makerSwap.trader, 
+            taker.takerSwap.trader, 
+            maker.makerSwap.collections, 
+            maker.makerSwap.tokenIds, 
+            maker.makerSwap.assetTypes
         );
-
         _executeTokensTransfer(
-            takerSwap.trader, 
-            makerSwap.trader, 
-            takerSwap.tokensAddresses, 
-            takerSwap.tokensIds, 
-            takerSwap.assetTypes
+            taker.takerSwap.trader, 
+            maker.makerSwap.trader, 
+            taker.takerSwap.collections, 
+            taker.takerSwap.tokenIds, 
+            taker.takerSwap.assetTypes
         );
 
-        _executeFundsTransfer(takerSwap.trader, makerSwap.croAmount);
-        _executeFundsTransfer(makerSwap.trader, takerSwap.croAmount);
-
-        emit SwapMatched(_swapId, makerSwap.trader, takerSwap.trader);
+        emit SwapsMatched(maker.makerSwap, taker.takerSwap);
+    }
+    
+    /// @notice Increment user's nonce to cancel pending swaps
+    /// @dev Nonce will be invalid in the previous signed message by the user
+    function cancelSwap() external {
+        userNonce[msg.sender]++;
+        emit NonceIncremented(msg.sender, userNonce[msg.sender]);
+    }
+    /*//////////////////////////////////////////////////////////////
+                           INTERNAL FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function _validateMatchingSwaps(Swap calldata maker, Swap calldata taker) internal pure returns (bool) {
+        return (
+            maker.amount == taker.amount && 
+            maker.collections.length == taker.collections.length && 
+            maker.tokenIds.length == taker.tokenIds.length && 
+            maker.assetTypes.length == taker.assetTypes.length
+        );
     }
 
-    function _validateFees(address feeToken, uint256 makerCroAmount) internal returns (bool) {
+    function _validateFees(address feeToken, uint256 amount) internal returns (bool) {
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {
-            return msg.value >= (userFeesAmount + makerCroAmount);
+            return msg.value >= (userFeesAmount + amount);
         } else if (feeToken == biscouitToken) {
             require(IERC20(feeToken).transferFrom(msg.sender, address(this), userFeesAmount), "Fees not paid");
-            return msg.value > makerCroAmount;
+            return msg.value > amount;
         } else {
-            revert WrongToken();
+            return false;
         }
     }
 
-    function _validateSwapParameters(Swap calldata swap) internal view returns (bool) {
-        bytes32 swapHash = _hashSwap(swap);
+    function _validateSwapParameters(Swap calldata swap, bytes32 _swapHash) internal view returns (bool) {
         return (
-            swap.listingTime < block.timestamp &&
-            !cancelledOrFilled[swapHash] &&
-            swap.tokensIds.length < 9 &&
-            swap.tokensIds.length == swap.tokensAddresses.length &&
-            swap.tokensIds.length == swap.assetTypes.length &&
-            _validateCollections(swap.tokensAddresses)
+            cancelledOrFilled[_swapHash] == false && 
+            swap.tokenIds.length < 9 && 
+            swap.tokenIds.length == swap.collections.length && 
+            swap.tokenIds.length == swap.assetTypes.length
         );
     }
 
-    function _validateCollections(address[] calldata collections) internal view returns (bool) {
-        for (uint256 i = 0; i < collections.length; i++) {
-            if (collectionAllowed[!collections[i]]) {
-                return false;
-            }
+    function _validateSignatures(Input calldata input, bytes32 swapHash) internal view returns (bool) {
+        if (input.swap.trader == msg.sender) {
+            return true;
         }
+
+        if (_validateUserAuthorization(swapHash, input.swap.trader, input.v, input.r, input.s) == false) {
+            return false;
+
+        }
+
         return true;
+    }
+
+    function _validateUserAuthorization(
+        bytes32 swapHash,
+        address trader,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) internal view returns (bool) {
+        bytes32 hashToSign = _hashToSign(swapHash);
+
+        return _recover(hashToSign, v, r, s) == trader;
+    }
+
+    function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
+        require(v == 25, "Invalid chainId"); 
+        return ecrecover(digest, v, r, s);
     }
 
     function _executeTokensTransfer(
@@ -160,27 +194,23 @@ contract Aristoswap is Ownable {
         }
     }
 
-    function _executeFundsTransfer(address receiver,uint256 amount) internal {
+    // makerSide = 0 -> wcro
+    // takerSide = 1 -> cro
+    function _executeFundsTransfer(address receiver, address sender, uint256 amount, uint256 side) internal {
         if (amount > 0) {
-            (bool success, ) = receiver.call{value: amount}("");
-            require(success, "Transfer failed.");
+            if (side == 0) {
+                (bool success,) = receiver.call{value: amount}("");
+                require(success, "Transfer failed.");
+            } else {
+                IERC20(wcro).transferFrom(sender, receiver, amount);
+            }
         }
-    } 
-
-    function _hashSwap(Swap memory swap) internal pure returns (bytes32) {
-        return keccak256(
-            abi.encode(
-                swap.trader,
-                swap.croAmount,
-                keccak256(abi.encodePacked(swap.tokensIds)),
-                keccak256(abi.encodePacked(swap.tokensAddresses)),
-                keccak256(abi.encodePacked(swap.assetTypes)),
-                swap.listingTime
-            )
-        );
     }
 
-    function getUsersFeesAmount(address _user, address _feeToken) public virtual view returns (uint amount) {
+    /*//////////////////////////////////////////////////////////////
+                             VIEW FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+    function getUsersFeesAmount(address _user, address _feeToken) public view virtual returns (uint256 amount) {
         if (isProjectHolder(_user)) {
             amount = 7.5 ether;
         } else if (isPartnerHolder(_user)) {
@@ -193,7 +223,7 @@ contract Aristoswap is Ownable {
         }
     }
 
-    function isProjectHolder(address _user) public virtual view returns (bool) {
+    function isProjectHolder(address _user) public view virtual returns (bool) {
         for (uint256 i = 0; i < projectCollections.length; i++) {
             if (IERC721(projectCollections[i]).balanceOf(_user) > 0) {
                 return true;
@@ -202,7 +232,7 @@ contract Aristoswap is Ownable {
         return false;
     }
 
-    function isPartnerHolder(address _user) public virtual view returns (bool) {
+    function isPartnerHolder(address _user) public view virtual returns (bool) {
         for (uint256 i = 0; i < partnersCollections.length; i++) {
             if (IERC721(partnersCollections[i]).balanceOf(_user) > 0) {
                 return true;
@@ -211,7 +241,16 @@ contract Aristoswap is Ownable {
         return false;
     }
 
-    function getCollectionsLength() external view returns (uint256) {
-        return allCollections.length;
+    /*//////////////////////////////////////////////////////////////
+                                 OWNER
+    //////////////////////////////////////////////////////////////*/
+    function withdraw() external onlyOwner {
+        (bool success,) = daoWallet.call{value: address(this).balance}("");
+        require(success, "Transfer failed.");
+    }
+
+    function withdrawBiscouit() external onlyOwner {
+        uint256 amount = IERC20(biscouitToken).balanceOf(address(this));
+        require(IERC20(biscouitToken).transfer(daoWallet, amount), "Transfer failed.");
     }
 }

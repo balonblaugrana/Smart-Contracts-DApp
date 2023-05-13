@@ -53,7 +53,6 @@ contract AristoswapTest is DSTest {
 
         mockNFT1155 = new mockERC1155();
 
-
         vm.startPrank(owner);
         swap = new Aristoswap(
             [address(aristodogs), address(dogHouses)],
@@ -141,16 +140,19 @@ contract AristoswapTest is DSTest {
         swap.withelistCollections(collections);
     }
 
-    function _setSwap(address user, uint256 croAmount, uint256[] memory tokenIds, address[] memory collections, uint256 listingTime) internal view returns (Swap memory swapUser) {
+    function _setSwap(
+        address user,
+        uint256 croAmount,
+        uint256[] memory tokenIds,
+        address[] memory collections,
+        uint256 listingTime
+    ) internal view returns (Swap memory swapUser) {
         uint256 collectionsLength = collections.length;
         AssetType[] memory assetTypes = new AssetType[](collectionsLength);
         for (uint256 i = 0; i < collectionsLength; i++) {
             if (
-                collections[i] == address(aristodogs) || 
-                collections[i] == address(dogHouses) || 
-                collections[i] == address(nft1) ||
-                collections[i] == address(nft2) ||
-                collections[i] == address(nft3)
+                collections[i] == address(aristodogs) || collections[i] == address(dogHouses)
+                    || collections[i] == address(nft1) || collections[i] == address(nft2) || collections[i] == address(nft3)
             ) {
                 assetTypes[i] = AssetType.ERC721;
             } else {
@@ -161,7 +163,7 @@ contract AristoswapTest is DSTest {
         swapUser = Swap({
             trader: user,
             croAmount: uint96(croAmount),
-            tokensIds: tokenIds,
+            tokenIds: tokenIds,
             tokensAddresses: collections,
             assetTypes: assetTypes,
             listingTime: uint64(listingTime)
