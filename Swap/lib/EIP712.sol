@@ -5,7 +5,7 @@ import {Swap} from "./SwapStructs.sol";
 
 /**
  * @title EIP712
- * @dev Contains all of the order hashing functions for EIP712 compliant signatures
+ * @dev Contains all of the swap hashing functions for EIP712 compliant signatures
  */
 contract EIP712 {
 
@@ -16,7 +16,7 @@ contract EIP712 {
         address verifyingContract;
     }
 
-    /* Order typehash for EIP 712 compatibility. */
+    /* Swap typehash for EIP 712 compatibility. */
     bytes32 constant public SWAP_TYPEHASH = keccak256(
         "Swap(address trader,uint96 amount,address[] collections,uint256[] tokenIds,uint8[] assetTypes)"
     );
@@ -58,7 +58,7 @@ contract EIP712 {
                       swap.tokenIds,
                       swap.assetTypes
                 ),
-                abi.encodePacked(nonce)
+                abi.encode(nonce)
             )
         );
     }

@@ -1,3 +1,7 @@
+typechain-types/*
+typechain-types
+.env
 lcov.info
-cache
 out
+node_modules/
+node_modulescache_hardhat

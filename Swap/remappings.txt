@@ -1,5 +1,5 @@
-@openzeppelin/=lib/openzeppelin-contracts/
-@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/
+@openzeppelin/=node_modules/@openzeppelin/
+@openzeppelin-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/
 forge-std/=lib/forge-std/src/
 ds-test/=lib/forge-std/lib/ds-test/src/
 solmate/=lib/solmate/src/

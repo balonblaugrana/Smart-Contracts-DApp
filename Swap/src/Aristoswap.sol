@@ -11,7 +11,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Swap, AssetType, Input} from "lib/SwapStructs.sol";
 import {EIP712} from "lib/EIP712.sol";
 
-import "forge-std/console.sol";
+//import "forge-std/console.sol";
 
 contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -25,7 +25,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     mapping(address => uint256) public userNonce;
     mapping(bytes32 => bool) public cancelledOrFilled;
 
-    address public immutable wcro = 0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23;
+    address public constant wcro = 0x5C7F8A570d578ED84E63fdFA7b1eE72dEae1AE23;
 
     /*//////////////////////////////////////////////////////////////
                                  EVENTS
@@ -45,6 +45,10 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                           PROXY INITIALIZATION
     //////////////////////////////////////////////////////////////*/
+    //constructor() {
+    //    _disableInitializers();
+    //}
+
     function initialize(
         address[2] memory _projectCollections, 
         address _daoWallet, 
@@ -67,7 +71,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    
+
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
@@ -78,17 +82,19 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
         if (_validateSwapParameters(taker.makerSwap, takerHash) == false) revert InvalidSwap(1);
 
-
         if (_validateSignatures(maker, makerHash) == false) revert InvalidAuthorization(0);
         if (_validateSignatures(taker, takerHash) == false) revert InvalidAuthorization(1);
 
         if (_validateFees(feeToken, taker.makerSwap.amount) == false ) revert FeesNotPaid();
 
+        cancelledOrFilled[makerHash] = true;
+        cancelledOrFilled[takerHash] = true;
+
         _executeFundsTransfer(taker.makerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
         _executeFundsTransfer(maker.makerSwap.trader, taker.makerSwap.trader, taker.makerSwap.amount, 1);
 
-        if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
-        if (_validateMatchingSwaps(maker.makerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
+        if (_validateMatchingSwaps(maker.makerSwap, taker.takerSwap) == false) revert SwapsDontMatch();
+        if (_validateMatchingSwaps(maker.takerSwap, taker.makerSwap) == false) revert SwapsDontMatch();
 
 
         _executeTokensTransfer(
@@ -155,7 +161,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
 
         if (_validateUserAuthorization(swapHash, input.makerSwap.trader, input.v, input.r, input.s) == false) {
             return false;
-
         }
 
         return true;
