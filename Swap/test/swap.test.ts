@@ -2,6 +2,7 @@ import { signTypedData, SignTypedDataVersion } from "@metamask/eth-sig-util";
 
 import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { expect } from "chai";
+import { sign } from "crypto";
 import { ethers , upgrades, network} from "hardhat";
 
 
@@ -26,6 +27,8 @@ interface Input {
     r: string;
     s: string;
 }
+
+
 
 function hashSwap(swap: Swap, nonce: number): string {
     const SWAP_TYPEHASH = ethers.utils.id('Swap(address trader,uint96 amount,address[] collections,uint256[] tokenIds,uint8[] assetTypes)');
@@ -77,7 +80,7 @@ describe("Aristoswap", function () {
     domain = {
         name: "Aristoswap", // contract deploy name
         version: "1.0", // contract deploy version
-        chainId: 25, // env chain id
+        chainId: 27, // env chain id
         verifyingContract: swap.address,
     };
   });
@@ -105,6 +108,41 @@ describe("Aristoswap", function () {
         const r = signature.slice(0, 66);
         const s = '0x' + signature.slice(66, 130);
         const v = '0x' + signature.slice(130, 132);
+        let makerHash = hashSwap(makerSwap, 0);
+        const makerInput: Input = {
+            makerSwap: makerSwap,
+            takerSwap: takerSwap,
+            v: parseInt(v),
+            r: r,
+            s: s
+        };
+        expect (
+            await swap.validateSignatures(makerInput, makerHash),
+        ).to.be.true;
+    });
+    it("Signature should not be valid", async () => {
+        const makerSwap: Swap = {
+            trader: alice.address,
+            amount: 0,
+            collections: [dogHouses.address],
+            tokenIds: [1],
+            assetTypes: [0]
+        };
+        const takerSwap: Swap = {
+            trader: bob.address,
+            amount: 0,
+            collections: [aristodogs.address],
+            tokenIds: [1],
+            assetTypes: [0]
+        };
+        const signature = await bob._signTypedData(
+            domain,
+            types,
+            makerSwap
+        );
+        const r = signature.slice(0, 66);
+        const s = '0x' + signature.slice(66, 130);
+        const v = '0x' + signature.slice(130, 132);
 
         let makerHash = hashSwap(makerSwap, 0);
         const makerInput: Input = {
@@ -114,8 +152,9 @@ describe("Aristoswap", function () {
             r: r,
             s: s
         };
-        let result = await swap.validateSignatures(makerInput, makerHash);
-        console.log(result);
+        expect (
+            await swap.connect(bob).validateSignatures(makerInput, makerHash),
+        ).to.be.false;
     })
   })
 });

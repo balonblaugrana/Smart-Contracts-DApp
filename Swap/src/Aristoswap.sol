@@ -179,7 +179,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     }
 
     function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
-        require(v == 25, "Invalid chainId"); 
+        require(v == 27, "Invalid chainId"); 
         return ecrecover(digest, v, r, s);
     }
 
