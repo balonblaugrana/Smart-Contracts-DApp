@@ -61,7 +61,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
             EIP712Domain({
                 name: "Aristoswap",
                 version: "1.0",
-                chainId: 25,
+                chainId: block.chainid,
                 verifyingContract: address(this)
             })
         );
@@ -159,6 +159,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         if (input.makerSwap.trader == msg.sender) {
             return true;
         }
+        console.log("test");
         if (_validateUserAuthorization(swapHash, input.makerSwap.trader, input.v, input.r, input.s) == false) {
             return false;
         }
@@ -174,12 +175,19 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         bytes32 s
     ) internal view returns (bool) {
         bytes32 hashToSign = _hashToSign(swapHash);
+        address recoverAddress = _recover(hashToSign, v, r, s);
+        console.logBytes32(hashToSign);
+        console.log("v: %s", v);
+        console.logBytes32(r);
+        console.logBytes32(s);
+        console.log("recoverAddress: %s", recoverAddress);
+        console.log("trader: %s", trader);
 
         return _recover(hashToSign, v, r, s) == trader;
     }
 
     function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal view returns (address) {
-        //require(v == 25, "Invalid chainId"); 
+        //require( v == 0 || v == 0, "Invalid recovery id");
         return ecrecover(digest, v, r, s);
     }
 

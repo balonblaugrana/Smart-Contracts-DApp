@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.18;
 
-import {Swap} from "./SwapStructs.sol";
+import { Swap, AssetType } from "./SwapStructs.sol";
 
 /**
  * @title EIP712
@@ -62,6 +62,7 @@ contract EIP712 {
             )
         );
     }
+
 
     function _hashToSign(bytes32 swapHash)
         internal

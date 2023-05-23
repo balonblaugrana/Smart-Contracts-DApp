@@ -18,6 +18,8 @@
     "@openzeppelin/hardhat-upgrades": "^1.26.0",
     "chai": "^4.3.7",
     "dotenv": "^16.0.3",
+    "eth-sig-util": "^3.0.1",
+    "ethers-eip712": "^0.2.0",
     "glob": "^10.2.5",
     "hardhat-preprocessor": "^0.1.5",
     "merkletreejs": "^0.3.10"

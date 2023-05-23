@@ -4,4 +4,6 @@ typechain-types
 lcov.info
 out
 node_modules/
-node_modulescache_hardhat
+node_modules
+cache_hardhat
+cache_hardhat/*

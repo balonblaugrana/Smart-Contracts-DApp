@@ -14,6 +14,15 @@ const config: HardhatUserConfig = {
     cache: "./cache_hardhat",
     tests: "./test",
   },
+  networks: {
+    hardhat: {
+      chainId: 25,
+    },
+    localhost: {
+      url: "http://localhost:8545",
+      chainId: 25,
+    },
+  },
 };
 
 export default config;

@@ -1,160 +1,119 @@
-import { signTypedData, SignTypedDataVersion } from "@metamask/eth-sig-util";
-
-import { loadFixture } from "@nomicfoundation/hardhat-network-helpers";
+import { Contract, Wallet, Signature } from 'ethers';
 import { expect } from "chai";
-import { sign } from "crypto";
-import { ethers , upgrades, network} from "hardhat";
+import { ethers, upgrades } from "hardhat";
+import { SwapParameters, AssetType, Swap, Input, sign } from "./utils/signatures";
+import { ZERO_ADDRESS } from './utils/utils';
 
-
-let aristodogs: any, dogHouses: any, biscouitToken: any, exchange: any;
-let alice: any, bob: any, owner: any;
-let domain: any;
-let swap: any;
-let types: any;
-
-interface Swap {
-    trader: string;
-    amount: number;
-    collections: string[];
-    tokenIds: number[];
-    assetTypes: number[];
-}
-
-interface Input {
-    makerSwap: Swap;
-    takerSwap: Swap;
-    v: number;
-    r: string;
-    s: string;
-}
-
-
-
-function hashSwap(swap: Swap, nonce: number): string {
-    const SWAP_TYPEHASH = ethers.utils.id('Swap(address trader,uint96 amount,address[] collections,uint256[] tokenIds,uint8[] assetTypes)');
-  
-    const encodedData = ethers.utils.defaultAbiCoder.encode(
-      ['bytes32', 'address', 'uint96', 'address[]', 'uint256[]', 'uint8[]', 'uint256'],
-      [
-        SWAP_TYPEHASH,
-        swap.trader,
-        swap.amount,
-        swap.collections,
-        swap.tokenIds,
-        swap.assetTypes.map(type => type.valueOf()),
-        nonce
-      ]
-    );
-  
-    return ethers.utils.keccak256(encodedData);
-}
-
+let aliceSwapParameters: any, bobSwapParameters: any;
+let aliceSwap: any, bobSwap: any;
+let aliceSwapHash: string, bobSwapHash: string;
+let aliceInput: any, bobInput: any;
 describe("Aristoswap", function () {
-  before(async () => {
-    [alice, bob, owner] = await ethers.getSigners();
-    const NFT = await ethers.getContractFactory("MockERC721");
-    const ERC20 = await ethers.getContractFactory("MockERC20");
-    dogHouses = await NFT.deploy();
-    aristodogs = await NFT.deploy();
-    biscouitToken = await ERC20.deploy();
-
-    await dogHouses.deployed();
-    await aristodogs.deployed();
-    await biscouitToken.deployed();
-
-    const Swap = await ethers.getContractFactory("TestAristoswap");
-    swap = await upgrades.deployProxy(Swap, [[dogHouses.address, aristodogs.address], owner.address, biscouitToken.address], {
-      kind: "uups",
+    let swapParameters: SwapParameters;
+    let alice: any, bob: any, owner: any, other: any;
+    let dogHouses: Contract, aristodogs: Contract, biscouitToken: Contract;
+    let exchange: Contract;
+    before(async () => {
+        [alice, bob, other, owner] = await ethers.getSigners();
+        console.log("Alice address: ", alice.address);
+        console.log("Bob address: ", bob.address);
+        const NFT = await ethers.getContractFactory("MockERC721");
+        const ERC20 = await ethers.getContractFactory("MockERC20");
+        dogHouses = await NFT.deploy();
+        aristodogs = await NFT.deploy();
+        biscouitToken = await ERC20.deploy();
+    
+        await dogHouses.deployed();
+        await aristodogs.deployed();
+        await biscouitToken.deployed();
+    
+        const Swap = await ethers.getContractFactory("TestAristoswap");
+        exchange = await upgrades.deployProxy(Swap, [[dogHouses.address, aristodogs.address], owner.address, biscouitToken.address], {
+          kind: "uups",
+        });
+        await exchange.deployed();
     });
-    await swap.deployed();
-    types = {
-        Struct: [
-          { name: "trader", type: "address" },
-          { name: "amount", type: "uint96" },
-          { name: "collections", type: "address[]" },
-          { name: "tokenIds", type: "uint256[]" },
-          { name: "assetTypes", type: "uint8[]" },
-        ]
-    };
-
-    domain = {
-        name: "Aristoswap", // contract deploy name
-        version: "1.0", // contract deploy version
-        chainId: 27, // env chain id
-        verifyingContract: swap.address,
-    };
+    describe("Signatures", () => {
+        beforeEach(async () => {
+            aliceSwapParameters = {
+                trader: alice.address,
+                amount: ethers.utils.parseEther("0"), 
+                collections: [aristodogs.address], 
+                tokenIds: [1], 
+                assetTypes: [AssetType.ERC721] 
+            };
+            aliceSwap = new Swap(alice, aliceSwapParameters, exchange);
+            aliceSwapHash = await aliceSwap.hash();
+            bobSwapParameters = {
+                trader: bob.address,
+                amount: ethers.utils.parseEther("0"), 
+                collections: [aristodogs.address], 
+                tokenIds: [2], 
+                assetTypes: [AssetType.ERC721] 
+            };
+            bobSwap = new Swap(bob, bobSwapParameters, exchange);
+            bobSwapHash = await bobSwap.hash();
+            aliceInput = await aliceSwap.pack({signer: alice}, bobSwapParameters);
+            bobInput = await bobSwap.pack({signer: bob}, aliceSwapParameters);
+        });
+        it("Sent by trader no signatures, should be valid", async () => {
+            aliceInput = await aliceSwap.packNoSigs(bobSwapParameters);
+            expect(
+                await exchange.connect(alice).validateSignatures(aliceInput, aliceSwapHash)
+            ).to.be.true;
+        });
+        it("Not sent by trader no signatures, should not be invalid", async () => {
+            aliceInput = await aliceSwap.packNoSigs(bobSwapParameters);
+            expect(
+                await exchange.connect(other).validateSignatures(aliceInput, aliceSwapHash)
+            ).to.be.false;
+        });
+        it("Not sent by trader, valid signatures, should be valid", async () => {
+            expect(
+                await exchange.connect(other).validateSignatures(aliceInput, aliceSwapHash)
+            ).to.be.true;
+        });
+        it("Different signer, should not be valid", async () => {
+            aliceInput = await aliceSwap.pack({signer: bob}, bobSwapParameters);
+            expect(
+                await exchange.connect(other).validateSignatures(aliceInput, aliceSwapHash)
+            ).to.be.false;
+        });
+    });
+    describe("Swap", () => {
+        beforeEach(async () => {
+            await aristodogs.mint(alice.address, 1);
+            await aristodogs.mint(bob.address, 2);
+            await aristodogs.connect(bob).setApprovalForAll(exchange.address, true);
+            await aristodogs.connect(alice).setApprovalForAll(exchange.address, true);
+            aliceSwapParameters = {
+                trader: alice.address,
+                amount: ethers.utils.parseEther("0"), 
+                collections: [aristodogs.address], 
+                tokenIds: [1], 
+                assetTypes: [AssetType.ERC721] 
+            };
+            aliceSwap = new Swap(alice, aliceSwapParameters, exchange);
+            aliceSwapHash = await aliceSwap.hash();
+            bobSwapParameters = {
+                trader: bob.address,
+                amount: ethers.utils.parseEther("0"), 
+                collections: [aristodogs.address], 
+                tokenIds: [2], 
+                assetTypes: [AssetType.ERC721] 
+            };
+            bobSwap = new Swap(bob, bobSwapParameters, exchange);
+            bobSwapHash = await bobSwap.hash();
+            aliceInput = await aliceSwap.pack({signer: alice}, bobSwapParameters);
+            bobInput = await bobSwap.pack({signer: bob}, aliceSwapParameters);
+        });
+        it("Should swap between two traders", async () => {
+            console.log("alice input ", aliceInput);
+            console.log("bob input ", bobInput);
+            const aliceNonce = await exchange.userNonce(alice.address);
+            const hashFromContract = await exchange.hashSwap(aliceSwap.parameters, aliceNonce);
+            //expect(hashFromContract).to.equal(aliceSwapHash);
+            await exchange.connect(other).makeSwap(aliceInput, bobInput, ZERO_ADDRESS);
+        });
+    });
   });
-  describe("Signatures", () => {
-    it("Signature should be valid", async () => {
-        const makerSwap: Swap = {
-            trader: alice.address,
-            amount: 0,
-            collections: [dogHouses.address],
-            tokenIds: [1],
-            assetTypes: [0]
-        };
-        const takerSwap: Swap = {
-            trader: bob.address,
-            amount: 0,
-            collections: [aristodogs.address],
-            tokenIds: [1],
-            assetTypes: [0]
-        };
-        const signature = await alice._signTypedData(
-            domain,
-            types,
-            makerSwap
-        );
-        const r = signature.slice(0, 66);
-        const s = '0x' + signature.slice(66, 130);
-        const v = '0x' + signature.slice(130, 132);
-        let makerHash = hashSwap(makerSwap, 0);
-        const makerInput: Input = {
-            makerSwap: makerSwap,
-            takerSwap: takerSwap,
-            v: parseInt(v),
-            r: r,
-            s: s
-        };
-        expect (
-            await swap.validateSignatures(makerInput, makerHash),
-        ).to.be.true;
-    });
-    it("Signature should not be valid", async () => {
-        const makerSwap: Swap = {
-            trader: alice.address,
-            amount: 0,
-            collections: [dogHouses.address],
-            tokenIds: [1],
-            assetTypes: [0]
-        };
-        const takerSwap: Swap = {
-            trader: bob.address,
-            amount: 0,
-            collections: [aristodogs.address],
-            tokenIds: [1],
-            assetTypes: [0]
-        };
-        const signature = await bob._signTypedData(
-            domain,
-            types,
-            makerSwap
-        );
-        const r = signature.slice(0, 66);
-        const s = '0x' + signature.slice(66, 130);
-        const v = '0x' + signature.slice(130, 132);
-
-        let makerHash = hashSwap(makerSwap, 0);
-        const makerInput: Input = {
-            makerSwap: makerSwap,
-            takerSwap: takerSwap,
-            v: parseInt(v),
-            r: r,
-            s: s
-        };
-        expect (
-            await swap.connect(bob).validateSignatures(makerInput, makerHash),
-        ).to.be.false;
-    })
-  })
-});
