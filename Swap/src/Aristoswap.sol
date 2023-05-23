@@ -12,6 +12,7 @@ import {Swap, AssetType, Input} from "lib/SwapStructs.sol";
 import {EIP712} from "lib/EIP712.sol";
 
 //import "forge-std/console.sol";
+import "hardhat/console.sol";
 
 contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
@@ -60,7 +61,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
             EIP712Domain({
                 name: "Aristoswap",
                 version: "1.0",
-                chainId: block.chainid,
+                chainId: 25,
                 verifyingContract: address(this)
             })
         );
@@ -158,7 +159,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         if (input.makerSwap.trader == msg.sender) {
             return true;
         }
-
         if (_validateUserAuthorization(swapHash, input.makerSwap.trader, input.v, input.r, input.s) == false) {
             return false;
         }
@@ -178,8 +178,8 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         return _recover(hashToSign, v, r, s) == trader;
     }
 
-    function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
-        require(v == 27, "Invalid chainId"); 
+    function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal view returns (address) {
+        //require(v == 25, "Invalid chainId"); 
         return ecrecover(digest, v, r, s);
     }
 
