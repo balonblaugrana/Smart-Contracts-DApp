@@ -67,6 +67,7 @@ contract AristoswapTestnet is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;
         wcro = _wcro;
+        _transferOwnership(0xef1884424aBfcaE0A2bA60862B8C84d1f1Ef0686);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

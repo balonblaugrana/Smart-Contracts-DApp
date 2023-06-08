@@ -61,6 +61,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
                 verifyingContract: address(this)
             })
         );
+        _transferOwnership(0xef1884424aBfcaE0A2bA60862B8C84d1f1Ef0686);
         projectCollections = _projectCollections;
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;

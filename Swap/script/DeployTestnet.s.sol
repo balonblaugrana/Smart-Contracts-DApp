@@ -9,7 +9,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 
 contract DeployTestnetScript is Script {
     address internal dao = 0xe06e6dF9A66a2a631Ea5e8FD587A59e13CC36750;
-
+    
     function run() public {
         uint256 deployerKey = vm.envUint("DEPLOYER_KEY");
         vm.startBroadcast(deployerKey);
