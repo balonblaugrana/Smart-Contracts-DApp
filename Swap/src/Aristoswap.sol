@@ -11,16 +11,6 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Swap, AssetType, Input} from "lib/SwapStructs.sol";
 import {EIP712} from "lib/EIP712.sol";
 
-//import "forge-std/console.sol";
-import "hardhat/console.sol";
-
-interface IMasterDog {
-    function viewAssetUserHolding(
-        address user,
-        address collection
-    ) external view returns (uint256[] memory);
-}
-
 contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -29,7 +19,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     address public daoWallet;
     address[] public partnersCollections;
     address[] private projectCollections;
-    IMasterDog public masterDog;
     mapping(address => uint256) public userNonce;
     mapping(bytes32 => bool) public cancelledOrFilled;
 
@@ -60,8 +49,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     function initialize(
         address[2] memory _projectCollections,
         address _daoWallet,
-        address _biscouitToken,
-        address _masterDog
+        address _biscouitToken
     ) public initializer {
         __Ownable_init();
 
@@ -76,27 +64,9 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         projectCollections = _projectCollections;
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;
-        IMasterDog masterDog = _masterDog;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
-    /*//////////////////////////////////////////////////////////////
-                    EXTERNAL ONLYOWNER: SETTING
-    //////////////////////////////////////////////////////////////*/
-    function addPartners(
-        address[] memory partnersAddresses
-    ) external onlyOwner {
-        for (uint256 i; i < partnersAddresses.length; i++) {
-            partnersCollections.push(partnersAddresses[i]);
-        }
-    }
-
-    function addProject(address[] memory projectAddresses) external onlyOwner {
-        for (uint256 i; i < projectAddresses.length; i++) {
-            projectCollections.push(projectAddresses[i]);
-        }
-    }
 
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
@@ -104,24 +74,12 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /// @notice 
     /// @param maker Input of msg.sender
     /// @param taker Input of counterparty
-    function makeSwap(
-        Input calldata maker,
-        Input calldata taker,
-        address feeToken
-    ) external payable {
-        bytes32 makerHash = _hashSwap(
-            maker.makerSwap,
-            userNonce[maker.makerSwap.trader]
-        );
-        bytes32 takerHash = _hashSwap(
-            taker.makerSwap,
-            userNonce[taker.makerSwap.trader]
-        );
+    function makeSwap(Input calldata maker, Input calldata taker, address feeToken) external payable {
+        bytes32 makerHash = _hashSwap(maker.makerSwap, userNonce[maker.makerSwap.trader]);
+        bytes32 takerHash = _hashSwap(taker.makerSwap, userNonce[taker.makerSwap.trader]);
         
-        if (_validateSwapParameters(maker.makerSwap, makerHash) == false)
-            revert InvalidSwap(0);
-        if (_validateSwapParameters(taker.makerSwap, takerHash) == false)
-            revert InvalidSwap(1);
+        if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
+        if (_validateSwapParameters(taker.makerSwap, takerHash) == false) revert InvalidSwap(1);
 
         if (_validateSignatures(maker, makerHash) == false)
             revert InvalidAuthorization(0);
@@ -229,15 +187,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         if (input.makerSwap.trader == msg.sender) {
             return true;
         }
-        if (
-            _validateUserAuthorization(
-                swapHash,
-                input.makerSwap.trader,
-                input.v,
-                input.r,
-                input.s
-            ) == false
-        ) {
+        if (_validateUserAuthorization(swapHash, input.makerSwap.trader, input.v, input.r, input.s) == false) {
             return false;
         }
 
@@ -256,12 +206,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         return _recover(hashToSign, v, r, s) == trader;
     }
 
-    function _recover(
-        bytes32 digest,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) internal pure returns (address) {
+    function _recover(bytes32 digest, uint8 v, bytes32 r, bytes32 s) internal pure returns (address) {
         //require( v == 0 || v == 0, "Invalid recovery id");
         return ecrecover(digest, v, r, s);
     }
@@ -332,13 +277,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     function isProjectHolder(address _user) public view virtual returns (bool) {
         for (uint256 i = 0; i < projectCollections.length; i++) {
             if (IERC721(projectCollections[i]).balanceOf(_user) > 0) {
-                return true;
-            }
-            if (
-                masterDog
-                    .viewAssetUserHolding(_user, projectCollections[i])
-                    .length > 0
-            ) {
                 return true;
             }
         }
