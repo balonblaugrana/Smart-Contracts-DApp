@@ -53,9 +53,9 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                           PROXY INITIALIZATION
     //////////////////////////////////////////////////////////////*/
-    //constructor() {
-    //    _disableInitializers();
-    //}
+    constructor() {
+        _disableInitializers();
+    }
 
     function initialize(
         address[2] memory _projectCollections,
@@ -101,6 +101,9 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
+    /// @notice 
+    /// @param maker Input of msg.sender
+    /// @param taker Input of counterparty
     function makeSwap(
         Input calldata maker,
         Input calldata taker,
@@ -114,7 +117,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
             taker.makerSwap,
             userNonce[taker.makerSwap.trader]
         );
-
+        
         if (_validateSwapParameters(maker.makerSwap, makerHash) == false)
             revert InvalidSwap(0);
         if (_validateSwapParameters(taker.makerSwap, takerHash) == false)
@@ -226,7 +229,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         if (input.makerSwap.trader == msg.sender) {
             return true;
         }
-        console.log("test");
         if (
             _validateUserAuthorization(
                 swapHash,
@@ -250,13 +252,6 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         bytes32 s
     ) internal view returns (bool) {
         bytes32 hashToSign = _hashToSign(swapHash);
-        address recoverAddress = _recover(hashToSign, v, r, s);
-        console.logBytes32(hashToSign);
-        console.log("v: %s", v);
-        console.logBytes32(r);
-        console.logBytes32(s);
-        console.log("recoverAddress: %s", recoverAddress);
-        console.log("trader: %s", trader);
 
         return _recover(hashToSign, v, r, s) == trader;
     }
@@ -266,7 +261,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) internal view returns (address) {
+    ) internal pure returns (address) {
         //require( v == 0 || v == 0, "Invalid recovery id");
         return ecrecover(digest, v, r, s);
     }

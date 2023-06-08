@@ -18,14 +18,14 @@ contract EIP712 {
 
     /* Swap typehash for EIP 712 compatibility. */
     bytes32 constant public SWAP_TYPEHASH = keccak256(
-        "Swap(address trader,uint96 amount,address[] collections,uint256[] tokenIds,uint8[] assetTypes)"
+        "Swap(address trader,uint96 amount,address[] collections,uint256[] tokenIds,uint8[] assetTypes,uint256 nonce)"
     );
 
     bytes32 constant EIP712DOMAIN_TYPEHASH = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
     );
 
-    bytes32 DOMAIN_SEPARATOR;
+    bytes32 public DOMAIN_SEPARATOR;
 
     function _hashDomain(EIP712Domain memory eip712Domain)
         internal
@@ -49,20 +49,17 @@ contract EIP712 {
         returns (bytes32)
     {
         return keccak256(
-            bytes.concat(
-                abi.encode(
-                      SWAP_TYPEHASH,
-                      swap.trader,
-                      swap.amount,
-                      swap.collections,
-                      swap.tokenIds,
-                      swap.assetTypes
-                ),
-                abi.encode(nonce)
+            abi.encode(
+                SWAP_TYPEHASH,
+                swap.trader,
+                swap.amount,
+                keccak256(abi.encodePacked(swap.collections)),
+                keccak256(abi.encodePacked(swap.tokenIds)),
+                keccak256(abi.encodePacked(swap.assetTypes)),
+                nonce
             )
         );
     }
-
 
     function _hashToSign(bytes32 swapHash)
         internal
