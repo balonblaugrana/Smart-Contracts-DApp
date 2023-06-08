@@ -36,25 +36,11 @@ contract TestAristoswap is Aristoswap {
         return _hashSwap(swap, nonce);
     }
 
-    function hashArrays(
-        address[] calldata collections,
-        uint256[] calldata tokenIds,
-        AssetType[] calldata assetTypes
-    ) external pure returns (bytes32 collectionsHash, bytes32 tokenIdsHash, bytes32 assetTypesHash) {
-        collectionsHash = keccak256(abi.encodePacked(collections));
-        tokenIdsHash = keccak256(abi.encodePacked(tokenIds));
-        assetTypesHash = keccak256(abi.encodePacked(assetTypes));
-    }
-
-    function hashToSign(bytes32 swapHash, bytes32 domainSeparator)
+    function hashToSign(bytes32 swapHash)
         external
         view
         returns (bytes32 hash)
     {
-        return keccak256(abi.encodePacked(
-            "\x19\x01",
-            domainSeparator,
-            swapHash
-        ));
+        return _hashToSign(swapHash);
     }
 }

@@ -15,8 +15,6 @@ describe("Aristoswap", function () {
     let exchange: Contract;
     before(async () => {
         [alice, bob, other, owner] = await ethers.getSigners();
-        console.log("Alice address: ", alice.address);
-        console.log("Bob address: ", bob.address);
         const NFT = await ethers.getContractFactory("MockERC721");
         const ERC20 = await ethers.getContractFactory("MockERC20");
         dogHouses = await NFT.deploy();
@@ -108,12 +106,13 @@ describe("Aristoswap", function () {
             bobInput = await bobSwap.pack({signer: bob}, aliceSwapParameters);
         });
         it("Should swap between two traders", async () => {
-            console.log("alice input ", aliceInput);
-            console.log("bob input ", bobInput);
-            const aliceNonce = await exchange.userNonce(alice.address);
-            const hashFromContract = await exchange.hashSwap(aliceSwap.parameters, aliceNonce);
-            //expect(hashFromContract).to.equal(aliceSwapHash);
-            await exchange.connect(other).makeSwap(aliceInput, bobInput, ZERO_ADDRESS);
+            await exchange.connect(alice).makeSwap(bobInput, aliceInput, ZERO_ADDRESS, {value: ethers.utils.parseEther("20")});
+            expect(
+                await aristodogs.ownerOf(1)
+            ).to.equal(bob.address);
+            expect(
+                await aristodogs.ownerOf(1)
+            ).to.equal(bob.address);
         });
     });
   });

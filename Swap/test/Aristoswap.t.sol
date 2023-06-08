@@ -2,7 +2,8 @@
 pragma solidity ^0.8.13;
 
 import "forge-std/Test.sol";
-import "../src/Aristoswap.sol";
+import { TestAristoswap } from "src/test/TestAristoswap.sol";
+import { Swap, AssetType, Input } from "lib/SwapStructs.sol";
 
 import {Utilities} from "./utils/Utilities.sol";
 
@@ -13,7 +14,7 @@ import {MockERC1155} from "src/mock/MockERC1155.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract AristoswapTest is DSTest {
-    Aristoswap internal swap;
+    TestAristoswap internal swap;
 
     Vm internal immutable vm = Vm(HEVM_ADDRESS);
     Utilities internal utils;
@@ -21,6 +22,11 @@ contract AristoswapTest is DSTest {
     address[] internal users;
     address internal owner;
     address internal dao;
+
+    uint256 internal bobKey = 0xDEAD;
+    uint256 aliceKey = 0xBEEF;
+    address internal alice;
+    address internal bob;
 
     MockERC20 internal biscouitToken;
     MockERC20 internal token1;
@@ -59,18 +65,98 @@ contract AristoswapTest is DSTest {
         mockNFT1155 = new MockERC1155();
 
         vm.startPrank(owner);
-        Aristoswap implementation = new Aristoswap();
+        TestAristoswap implementation = new TestAristoswap();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
-        swap = Aristoswap(address(proxy));
+        swap = TestAristoswap(address(proxy));
         swap.initialize([address(aristodogs), address(dogHouses)], dao, address(biscouitToken));
         vm.stopPrank();
+
+        alice = vm.addr(aliceKey);
+        bob = vm.addr(bobKey);
 
         vm.warp(block.timestamp + 10 days);
     }
 
+    function _getAliceSwap() public returns (Swap memory) {
+        address[] memory collections = new address[](1);
+        collections[0] = address(dogHouses);
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 1;
+        AssetType[] memory assetsType = new AssetType[](1);
+        assetsType[0] = AssetType.ERC721;
+
+        vm.startPrank(alice);
+        dogHouses.mint(alice, 1);
+        dogHouses.setApprovalForAll(address(swap), true);
+        vm.stopPrank();
+
+        Swap memory aliceSwap = Swap({
+            trader: alice,
+            amount: 0 ether,
+            collections: collections,
+            tokenIds: tokenIds,
+            assetTypes: assetsType
+        });
+        return aliceSwap;
+    }
+
+    function _getBobSwap() public returns (Swap memory) {
+        address[] memory collections = new address[](1);
+        collections[0] = address(dogHouses);
+        AssetType[] memory assetsType = new AssetType[](1);
+        assetsType[0] = AssetType.ERC721;
+        uint256[] memory bobTokenIds = new uint256[](1);
+        bobTokenIds[0] = 2;
+
+        vm.startPrank(bob);
+        dogHouses.mint(bob, 2);
+        dogHouses.setApprovalForAll(address(swap), true);
+        vm.stopPrank();
+
+        Swap memory bobSwap = Swap({
+            trader: bob,
+            amount: 100 ether,
+            collections: collections,
+            tokenIds: bobTokenIds,
+            assetTypes: assetsType
+        });
+
+        return bobSwap;
+    }
+
+    function _getBobInput(Swap memory bobSwap, Swap memory aliceSwap) public view returns (Input memory) {
+        bytes32 swapHash = swap.hashSwap(bobSwap, 0);
+        bytes32 bobDigest = swap.hashToSign(swapHash);
+        (uint8 sigBobV, bytes32 sigBobR, bytes32 sigBobS) = vm.sign(bobKey, bobDigest);
+
+        Input memory input = Input({
+            makerSwap: bobSwap,
+            takerSwap: aliceSwap,
+            v: sigBobV,
+            r: sigBobR,
+            s: sigBobS
+        });
+
+        return input;
+    }
+
+    function _getAliceInput(Swap memory aliceSwap, Swap memory bobSwap) public view returns (Input memory) {
+        bytes32 swapHash = swap.hashSwap(aliceSwap, 0);
+        bytes32 aliceDigest = swap.hashToSign(swapHash);
+        (uint8 sigAliceV, bytes32 sigAliceR, bytes32 sigAliceS) = vm.sign(aliceKey, aliceDigest);
+
+        Input memory input = Input({
+            makerSwap: aliceSwap,
+            takerSwap: bobSwap,
+            v: sigAliceV,
+            r: sigAliceR,
+            s: sigAliceS
+        });
+
+        return input;
+    }
+
     function testSignatures() public {
-        uint256 userKey = 0xBEEF;
-        address alice = vm.addr(userKey);
         address[] memory collections = new address[](1);
         collections[0] = address(aristodogs);
         uint256[] memory tokenIds = new uint256[](1);
@@ -82,15 +168,58 @@ contract AristoswapTest is DSTest {
         dogHouses.mint(alice, 1);
         dogHouses.setApprovalForAll(address(swap), true);
 
-        Swap memory swapStruct = Swap({
+        Swap memory aliceSwap = Swap({
             trader: alice,
-            amount: 100,
+            amount: 0 ether,
             collections: collections,
             tokenIds: tokenIds,
             assetTypes: assetsType
         });
 
-        //bytes32 digest = TestAristoswap.hashSwap(swapStruct, 0);
-        //(uint8 v, bytes32 r, bytes32 s) = vm.sign(userKey, digest);
+        uint256[] memory bobTokenIds = new uint256[](1);
+        bobTokenIds[0] = 2;
+        Swap memory bobSwap = Swap({
+            trader: bob,
+            amount: 0 ether,
+            collections: collections,
+            tokenIds: bobTokenIds,
+            assetTypes: assetsType
+        });
+        bytes32 swapHash = swap.hashSwap(bobSwap, 0);
+        bytes32 bobDigest = swap.hashToSign(swapHash);
+        (uint8 sigBobV, bytes32 sigBobR, bytes32 sigBobS) = vm.sign(bobKey, bobDigest);
+        Input memory input = Input({
+            makerSwap: bobSwap,
+            takerSwap: aliceSwap,
+            v: sigBobV,
+            r: sigBobR,
+            s: sigBobS
+        });
+        assert(swap.validateSignatures(input, swapHash));
+    }
+
+    function testSwaps_ShouldMatch() public {
+        Swap memory aliceSwap = _getAliceSwap();
+        Swap memory bobSwap = _getBobSwap();
+        Input memory aliceInput = _getAliceInput(aliceSwap, bobSwap);
+        Input memory bobInput = _getBobInput(bobSwap, aliceSwap);
+        
+        assert(swap.validateMatchingSwaps(aliceInput.makerSwap, bobInput.takerSwap));
+        assert(swap.validateMatchingSwaps(aliceInput.takerSwap, bobInput.makerSwap));
+    }
+
+    function testSwap_ShouldSucceed() public {
+        Swap memory aliceSwap = _getAliceSwap();
+        Swap memory bobSwap = _getBobSwap();
+
+        Input memory aliceInput = _getAliceInput(aliceSwap, bobSwap);
+        Input memory bobInput = _getBobInput(bobSwap, aliceSwap);
+
+        vm.deal(bob, 10000000 ether);
+        vm.startPrank(bob);
+        swap.makeSwap{value: 120 ether}(bobInput, aliceInput, address(0));
+
+        assertEq(dogHouses.ownerOf(1), bob);
+        assertEq(dogHouses.ownerOf(2), alice);
     }
 }
