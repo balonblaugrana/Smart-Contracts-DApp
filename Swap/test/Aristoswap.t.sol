@@ -10,6 +10,7 @@ import {Utilities} from "./utils/Utilities.sol";
 import {MockERC20} from "src/mock/MockERC20.sol";
 import {MockERC721} from "src/mock/MockERC721.sol";
 import {MockERC1155} from "src/mock/MockERC1155.sol";
+import {MasterDog} from "src/mock/MasterDog.sol";
 
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -63,12 +64,13 @@ contract AristoswapTest is DSTest {
         nft3 = new MockERC721();
 
         mockNFT1155 = new MockERC1155();
+        MasterDog masterDog = new MasterDog();
 
         vm.startPrank(owner);
         TestAristoswap implementation = new TestAristoswap();
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), "");
         swap = TestAristoswap(address(proxy));
-        swap.initialize([address(aristodogs), address(dogHouses)], dao, address(biscouitToken));
+        swap.initialize([address(aristodogs), address(dogHouses)], dao, address(biscouitToken), address(masterDog));
         vm.stopPrank();
 
         alice = vm.addr(aliceKey);

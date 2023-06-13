@@ -11,6 +11,10 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {Swap, AssetType, Input} from "lib/SwapStructs.sol";
 import {EIP712} from "lib/EIP712.sol";
 
+interface IMasterDog {
+    function viewAssetUserHolding(address user, address collection) external view returns (uint256[] memory);
+}
+
 contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                                 STORAGE
@@ -19,6 +23,8 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     address public daoWallet;
     address[] public partnersCollections;
     address[] private projectCollections;
+    IMasterDog public masterDog;
+
     mapping(address => uint256) public userNonce;
     mapping(bytes32 => bool) public cancelledOrFilled;
 
@@ -42,74 +48,84 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                           PROXY INITIALIZATION
     //////////////////////////////////////////////////////////////*/
-    constructor() {
-        _disableInitializers();
-    }
+    //constructor() {
+    //    _disableInitializers();
+    //}
 
     function initialize(
-        address[2] memory _projectCollections,
-        address _daoWallet,
-        address _biscouitToken
-    ) public initializer {
+        address[2] memory _projectCollections, 
+        address _daoWallet, 
+        address _biscouitToken,
+        address _masterDog
+    )
+        public
+        initializer
+    {
         __Ownable_init();
 
         DOMAIN_SEPARATOR = _hashDomain(
-            EIP712Domain({
-                name: "Aristoswap",
-                version: "1.0",
-                chainId: block.chainid,
-                verifyingContract: address(this)
-            })
+            EIP712Domain({name: "Aristoswap", version: "1.0", chainId: block.chainid, verifyingContract: address(this)})
         );
         _transferOwnership(0xef1884424aBfcaE0A2bA60862B8C84d1f1Ef0686);
         projectCollections = _projectCollections;
         daoWallet = _daoWallet;
         biscouitToken = _biscouitToken;
+        masterDog = IMasterDog(_masterDog);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
     /*//////////////////////////////////////////////////////////////
+                    EXTERNAL ONLYOWNER: SETTING
+    //////////////////////////////////////////////////////////////*/
+    function addPartners(address[] memory partnersAddresses) external onlyOwner {
+        for (uint256 i; i < partnersAddresses.length; i++) {
+            partnersCollections.push(partnersAddresses[i]);
+        }
+    }
+
+    function addProject(address[] memory projectAddresses) external onlyOwner {
+        for (uint256 i; i < projectAddresses.length; i++) {
+            projectCollections.push(projectAddresses[i]);
+        }
+    }
+
+    /*//////////////////////////////////////////////////////////////
                            EXTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    /// @notice 
+    /// @notice
     /// @param maker Input of msg.sender
     /// @param taker Input of counterparty
     function makeSwap(Input calldata maker, Input calldata taker, address feeToken) external payable {
         bytes32 makerHash = _hashSwap(maker.makerSwap, userNonce[maker.makerSwap.trader]);
         bytes32 takerHash = _hashSwap(taker.makerSwap, userNonce[taker.makerSwap.trader]);
-        
+
         if (_validateSwapParameters(maker.makerSwap, makerHash) == false) revert InvalidSwap(0);
         if (_validateSwapParameters(taker.makerSwap, takerHash) == false) revert InvalidSwap(1);
 
-        if (_validateSignatures(maker, makerHash) == false)
+        if (_validateSignatures(maker, makerHash) == false) {
             revert InvalidAuthorization(0);
-        if (_validateSignatures(taker, takerHash) == false)
+        }
+        if (_validateSignatures(taker, takerHash) == false) {
             revert InvalidAuthorization(1);
+        }
 
-        if (_validateFees(feeToken, taker.makerSwap.amount) == false)
+        if (_validateFees(feeToken, taker.makerSwap.amount) == false) {
             revert FeesNotPaid();
+        }
 
         cancelledOrFilled[makerHash] = true;
         cancelledOrFilled[takerHash] = true;
 
-        _executeFundsTransfer(
-            taker.makerSwap.trader,
-            maker.makerSwap.trader,
-            maker.makerSwap.amount,
-            0
-        );
-        _executeFundsTransfer(
-            maker.makerSwap.trader,
-            taker.makerSwap.trader,
-            taker.makerSwap.amount,
-            1
-        );
+        _executeFundsTransfer(taker.makerSwap.trader, maker.makerSwap.trader, maker.makerSwap.amount, 0);
+        _executeFundsTransfer(maker.makerSwap.trader, taker.makerSwap.trader, taker.makerSwap.amount, 1);
 
-        if (_validateMatchingSwaps(maker.makerSwap, taker.takerSwap) == false)
+        if (_validateMatchingSwaps(maker.makerSwap, taker.takerSwap) == false) {
             revert SwapsDontMatch();
-        if (_validateMatchingSwaps(maker.takerSwap, taker.makerSwap) == false)
+        }
+        if (_validateMatchingSwaps(maker.takerSwap, taker.makerSwap) == false) {
             revert SwapsDontMatch();
+        }
 
         _executeTokensTransfer(
             maker.makerSwap.trader,
@@ -139,52 +155,35 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                            INTERNAL FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function _validateMatchingSwaps(
-        Swap calldata maker,
-        Swap calldata taker
-    ) internal pure returns (bool) {
-        return (maker.amount == taker.amount &&
-            maker.collections.length == taker.collections.length &&
-            maker.tokenIds.length == taker.tokenIds.length &&
-            maker.assetTypes.length == taker.assetTypes.length);
+    function _validateMatchingSwaps(Swap calldata maker, Swap calldata taker) internal pure returns (bool) {
+        return (
+            maker.amount == taker.amount && maker.collections.length == taker.collections.length
+                && maker.tokenIds.length == taker.tokenIds.length && maker.assetTypes.length == taker.assetTypes.length
+        );
     }
 
-    function _validateFees(
-        address feeToken,
-        uint256 amount
-    ) internal returns (bool) {
+    function _validateFees(address feeToken, uint256 amount) internal returns (bool) {
         uint256 userFeesAmount = getUsersFeesAmount(msg.sender, feeToken);
         if (feeToken == address(0)) {
             return msg.value >= (userFeesAmount + amount);
         } else if (feeToken == biscouitToken) {
-            require(
-                IERC20(feeToken).transferFrom(
-                    msg.sender,
-                    address(this),
-                    userFeesAmount
-                ),
-                "Fees not paid"
-            );
+            require(IERC20(feeToken).transferFrom(msg.sender, address(this), userFeesAmount), "Fees not paid");
             return msg.value > amount;
         } else {
             return false;
         }
     }
 
-    function _validateSwapParameters(
-        Swap calldata swap,
-        bytes32 _swapHash
-    ) internal view returns (bool) {
-        return (cancelledOrFilled[_swapHash] == false &&
-            swap.tokenIds.length < 9 &&
-            swap.tokenIds.length == swap.collections.length &&
-            swap.tokenIds.length == swap.assetTypes.length);
+    function _validateSwapParameters(Swap calldata swap, bytes32 _swapHash) internal view returns (bool) {
+        return (
+            cancelledOrFilled[_swapHash] == false && 
+            swap.tokenIds.length < 9 && 
+            swap.tokenIds.length == swap.collections.length && 
+            swap.tokenIds.length == swap.assetTypes.length
+        );
     }
 
-    function _validateSignatures(
-        Input calldata input,
-        bytes32 swapHash
-    ) internal view returns (bool) {
+    function _validateSignatures(Input calldata input, bytes32 swapHash) internal view returns (bool) {
         if (input.makerSwap.trader == msg.sender) {
             return true;
         }
@@ -195,13 +194,11 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
         return true;
     }
 
-    function _validateUserAuthorization(
-        bytes32 swapHash,
-        address trader,
-        uint8 v,
-        bytes32 r,
-        bytes32 s
-    ) internal view returns (bool) {
+    function _validateUserAuthorization(bytes32 swapHash, address trader, uint8 v, bytes32 r, bytes32 s)
+        internal
+        view
+        returns (bool)
+    {
         bytes32 hashToSign = _hashToSign(swapHash);
 
         return _recover(hashToSign, v, r, s) == trader;
@@ -221,34 +218,19 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     ) internal {
         for (uint256 i = 0; i < collection.length; i++) {
             if (assetTypes[i] == AssetType.ERC721) {
-                IERC721(collection[i]).safeTransferFrom(
-                    sender,
-                    receiver,
-                    tokenIds[i]
-                );
+                IERC721(collection[i]).safeTransferFrom(sender, receiver, tokenIds[i]);
             } else {
-                IERC1155(collection[i]).safeTransferFrom(
-                    sender,
-                    receiver,
-                    tokenIds[i],
-                    1,
-                    ""
-                );
+                IERC1155(collection[i]).safeTransferFrom(sender, receiver, tokenIds[i], 1, "");
             }
         }
     }
 
     // makerSide = 0 -> wcro
     // takerSide = 1 -> cro
-    function _executeFundsTransfer(
-        address receiver,
-        address sender,
-        uint256 amount,
-        uint256 side
-    ) internal {
+    function _executeFundsTransfer(address receiver, address sender, uint256 amount, uint256 side) internal {
         if (amount > 0) {
             if (side == 0) {
-                (bool success, ) = receiver.call{value: amount}("");
+                (bool success,) = receiver.call{value: amount}("");
                 require(success, "Transfer failed.");
             } else {
                 IERC20(wcro).transferFrom(sender, receiver, amount);
@@ -259,10 +241,7 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     /*//////////////////////////////////////////////////////////////
                              VIEW FUNCTIONS
     //////////////////////////////////////////////////////////////*/
-    function getUsersFeesAmount(
-        address _user,
-        address _feeToken
-    ) public view virtual returns (uint256 amount) {
+    function getUsersFeesAmount(address _user, address _feeToken) public view virtual returns (uint256 amount) {
         if (isProjectHolder(_user)) {
             amount = 7.5 ether;
         } else if (isPartnerHolder(_user)) {
@@ -278,6 +257,9 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
     function isProjectHolder(address _user) public view virtual returns (bool) {
         for (uint256 i = 0; i < projectCollections.length; i++) {
             if (IERC721(projectCollections[i]).balanceOf(_user) > 0) {
+                return true;
+            }
+            if (masterDog.viewAssetUserHolding(_user, projectCollections[i]).length > 0) {
                 return true;
             }
         }
@@ -297,15 +279,12 @@ contract Aristoswap is OwnableUpgradeable, UUPSUpgradeable, EIP712 {
                                  OWNER
     //////////////////////////////////////////////////////////////*/
     function withdraw() external onlyOwner {
-        (bool success, ) = daoWallet.call{value: address(this).balance}("");
+        (bool success,) = daoWallet.call{value: address(this).balance}("");
         require(success, "Transfer failed.");
     }
 
     function withdrawBiscouit() external onlyOwner {
         uint256 amount = IERC20(biscouitToken).balanceOf(address(this));
-        require(
-            IERC20(biscouitToken).transfer(daoWallet, amount),
-            "Transfer failed."
-        );
+        require(IERC20(biscouitToken).transfer(daoWallet, amount), "Transfer failed.");
     }
 }
